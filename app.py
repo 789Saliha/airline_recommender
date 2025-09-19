@@ -8,7 +8,7 @@ st.title("✈️ Airline Recommendation System")
 # ===============================
 # Load Dataset
 # ===============================
-df = pd.read_csv("data\\reviews.csv")
+df = pd.read_csv("data/reviews.csv")
 
 # Check required columns
 required_cols = ["Airline", "Reviews", "Route", "Class"]
