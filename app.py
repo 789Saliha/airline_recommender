@@ -38,6 +38,12 @@ df["Amenities"] = df["Reviews"].apply(
 )
 
 # ===============================
+# Extract Departure & Destination
+# ===============================
+# Assuming Route format: "London to Dubai"
+df[["Departure", "Destination"]] = df["Route"].str.split(" to ", expand=True)
+
+# ===============================
 # User Inputs
 # ===============================
 st.subheader("🔍 Enter Your Preferences")
@@ -46,9 +52,9 @@ preferences = st.text_area(
     "Describe your preferences (e.g., 'comfortable airline with good food and entertainment')"
 )
 
-# Route dropdown instead of text input
-available_routes = df["Route"].dropna().unique()
-route = st.selectbox("Select Route:", available_routes)
+# Country dropdowns (with search enabled in Streamlit selectbox)
+departure_country = st.selectbox("Select Departure Country:", sorted(df["Departure"].dropna().unique()))
+destination_country = st.selectbox("Select Destination Country:", sorted(df["Destination"].dropna().unique()))
 
 travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
 
@@ -88,8 +94,11 @@ if travel_class:
 if traveller_type:
     filtered_df = filtered_df[filtered_df["Type of Traveller"] == traveller_type]
 
-if route:
-    filtered_df = filtered_df[filtered_df["Route"] == route]
+if departure_country:
+    filtered_df = filtered_df[filtered_df["Departure"] == departure_country]
+
+if destination_country:
+    filtered_df = filtered_df[filtered_df["Destination"] == destination_country]
 
 # Aggregate airline ratings
 recommendations = (
@@ -107,7 +116,7 @@ if st.button("Get Recommendations"):
         st.warning("⚠️ No airlines found matching your preferences.")
     else:
         recommended_df = filtered_df[filtered_df["Airline"].isin(recommendations.index)][
-            ["Airline", "Route", "Class", "Amenities", "Reviews", "Overall Rating"]
+            ["Airline", "Departure", "Destination", "Class", "Amenities", "Reviews", "Overall Rating"]
         ].drop_duplicates(subset=["Airline"])
 
         st.subheader("✈️ Recommended Airlines")
