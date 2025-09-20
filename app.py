@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 st.title("✈️ Advanced Airline Recommendation System")
 
@@ -9,7 +10,6 @@ st.title("✈️ Advanced Airline Recommendation System")
 df = pd.read_csv("data/reviews.csv")
 
 # --- Add synthetic features for demo ---
-# Budget range based on Class
 budget_map = {
     "Economy": "Cheap",
     "Premium Economy": "Mid",
@@ -18,7 +18,6 @@ budget_map = {
 }
 df["Budget"] = df["Class"].map(budget_map).fillna("Cheap")
 
-# Airline Alliance (example mapping)
 alliance_map = {
     "Qatar Airways": "Oneworld",
     "Lufthansa": "Star Alliance",
@@ -29,14 +28,11 @@ alliance_map = {
 }
 df["Alliance"] = df["Airline"].map(alliance_map).fillna("None")
 
-# Flight Duration (example rule: short/medium/long)
-import numpy as np
 df["Flight Duration"] = np.where(
     df["Route"].str.contains("London|Paris|Rome"), "Short-haul",
     np.where(df["Route"].str.contains("New York|Dubai"), "Long-haul", "Medium-haul")
 )
 
-# Amenities (dummy assignment for now)
 df["Amenities"] = df["Reviews"].apply(
     lambda x: ["WiFi", "Entertainment"] if "wifi" in str(x).lower() else ["Entertainment"]
 )
@@ -50,7 +46,9 @@ preferences = st.text_area(
     "Describe your preferences (e.g., 'comfortable airline with good food and entertainment')"
 )
 
-route = st.text_input("Enter Route (Departure - Destination):", "London - New York")
+# Route dropdown instead of text input
+available_routes = df["Route"].dropna().unique()
+route = st.selectbox("Select Route:", available_routes)
 
 travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
 
@@ -84,6 +82,15 @@ if duration != "Any":
 if amenities:
     filtered_df = filtered_df[filtered_df["Amenities"].apply(lambda x: all(a in x for a in amenities))]
 
+if travel_class:
+    filtered_df = filtered_df[filtered_df["Class"] == travel_class]
+
+if traveller_type:
+    filtered_df = filtered_df[filtered_df["Type of Traveller"] == traveller_type]
+
+if route:
+    filtered_df = filtered_df[filtered_df["Route"] == route]
+
 # Aggregate airline ratings
 recommendations = (
     filtered_df.groupby("Airline")["Overall Rating"]
@@ -99,5 +106,9 @@ if st.button("Get Recommendations"):
     if recommendations.empty:
         st.warning("⚠️ No airlines found matching your preferences.")
     else:
+        recommended_df = filtered_df[filtered_df["Airline"].isin(recommendations.index)][
+            ["Airline", "Route", "Class", "Amenities", "Reviews", "Overall Rating"]
+        ].drop_duplicates(subset=["Airline"])
+
         st.subheader("✈️ Recommended Airlines")
-        st.table(recommendations)
+        st.dataframe(recommended_df.reset_index(drop=True))
