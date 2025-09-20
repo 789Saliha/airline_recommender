@@ -29,8 +29,8 @@ alliance_map = {
 df["Alliance"] = df["Airline"].map(alliance_map).fillna("None")
 
 df["Flight Duration"] = np.where(
-    df["Route"].str.contains("London|Paris|Rome"), "Short-haul",
-    np.where(df["Route"].str.contains("New York|Dubai"), "Long-haul", "Medium-haul")
+    df["Route"].str.contains("London|Paris|Rome", na=False), "Short-haul",
+    np.where(df["Route"].str.contains("New York|Dubai", na=False), "Long-haul", "Medium-haul")
 )
 
 df["Amenities"] = df["Reviews"].apply(
@@ -38,10 +38,16 @@ df["Amenities"] = df["Reviews"].apply(
 )
 
 # ===============================
-# Extract Departure & Destination
+# Extract Departure & Destination (Safe Split)
 # ===============================
-# Assuming Route format: "London to Dubai"
-df[["Departure", "Destination"]] = df["Route"].str.split(" to ", expand=True)
+split_routes = df["Route"].str.split(" to ", n=1, expand=True)
+df["Departure"] = split_routes[0].fillna("Unknown")
+df["Destination"] = split_routes[1].fillna("Unknown")
+
+# Warn if some routes are malformed
+bad_routes = df[df["Destination"] == "Unknown"]["Route"].unique()
+if len(bad_routes) > 0:
+    st.warning(f"⚠️ Some routes in dataset are not in 'X to Y' format: {bad_routes[:5]} ...")
 
 # ===============================
 # User Inputs
@@ -52,10 +58,24 @@ preferences = st.text_area(
     "Describe your preferences (e.g., 'comfortable airline with good food and entertainment')"
 )
 
-# Country dropdowns (with search enabled in Streamlit selectbox)
-departure_country = st.selectbox("Select Departure Country:", sorted(df["Departure"].dropna().unique()))
-destination_country = st.selectbox("Select Destination Country:", sorted(df["Destination"].dropna().unique()))
+# --- Departure & Destination ---
+departure_country = st.selectbox(
+    "Select Departure Country:",
+    sorted(df["Departure"].dropna().unique())
+)
 
+# Dynamic destinations based on departure
+available_destinations = (
+    df[df["Departure"] == departure_country]["Destination"]
+    .dropna()
+    .unique()
+)
+destination_country = st.selectbox(
+    "Select Destination Country:",
+    sorted(available_destinations)
+)
+
+# --- Other Filters ---
 travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
 
 traveller_type = st.selectbox("Select Traveller Type:", df["Type of Traveller"].dropna().unique())
