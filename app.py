@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 
 st.title("✈️ Advanced Airline Recommendation System")
 
@@ -9,7 +10,54 @@ st.title("✈️ Advanced Airline Recommendation System")
 # ===============================
 df = pd.read_csv("data/reviews.csv")
 
-# --- Add synthetic features for demo ---
+# ===============================
+# Route Cleaning Function
+# ===============================
+def clean_route(route):
+    if pd.isna(route):
+        return "Unknown"
+    route = str(route).strip()
+
+    # Normalize "to" and fix typos like "nto"
+    route = re.sub(r"\s*to\s*", " to ", route, flags=re.IGNORECASE)
+    route = re.sub(r"nto", " to ", route, flags=re.IGNORECASE)
+
+    # Remove "via ..." part
+    route = re.split(r"\s+via\s+", route, flags=re.IGNORECASE)[0]
+
+    # Add spacing if missing (like 'toCPT' -> 'to CPT')
+    route = re.sub(r"to([A-Z]{2,3})", r"to \1", route)
+
+    return route.title().strip()
+
+df["Route_Clean"] = df["Route"].apply(clean_route)
+
+# ===============================
+# Extract Departure & Destination
+# ===============================
+split_routes = df["Route_Clean"].str.split(" to ", n=1, expand=True)
+df["Departure"] = split_routes[0].fillna("Unknown").str.strip()
+df["Destination"] = split_routes[1].fillna("Unknown").str.strip()
+
+# Warn if malformed routes remain
+bad_routes = df[df["Destination"] == "Unknown"]["Route"].unique()
+if len(bad_routes) > 0:
+    st.warning(f"⚠️ Some routes could not be parsed: {bad_routes[:5]} ...")
+
+# ===============================
+# Clean Class Names
+# ===============================
+df["Class"] = df["Class"].astype(str).str.strip().str.title()
+class_map = {
+    "Economyy": "Economy",
+    "Eco": "Economy",
+    "Busines": "Business"
+}
+df["Class"] = df["Class"].replace(class_map)
+
+# ===============================
+# Add Synthetic Features
+# ===============================
 budget_map = {
     "Economy": "Cheap",
     "Premium Economy": "Mid",
@@ -29,25 +77,13 @@ alliance_map = {
 df["Alliance"] = df["Airline"].map(alliance_map).fillna("None")
 
 df["Flight Duration"] = np.where(
-    df["Route"].str.contains("London|Paris|Rome", na=False), "Short-haul",
-    np.where(df["Route"].str.contains("New York|Dubai", na=False), "Long-haul", "Medium-haul")
+    df["Route_Clean"].str.contains("London|Paris|Rome", na=False), "Short-haul",
+    np.where(df["Route_Clean"].str.contains("New York|Dubai", na=False), "Long-haul", "Medium-haul")
 )
 
 df["Amenities"] = df["Reviews"].apply(
     lambda x: ["WiFi", "Entertainment"] if "wifi" in str(x).lower() else ["Entertainment"]
 )
-
-# ===============================
-# Extract Departure & Destination (Safe Split)
-# ===============================
-split_routes = df["Route"].str.split(" to ", n=1, expand=True)
-df["Departure"] = split_routes[0].fillna("Unknown")
-df["Destination"] = split_routes[1].fillna("Unknown")
-
-# Warn if some routes are malformed
-bad_routes = df[df["Destination"] == "Unknown"]["Route"].unique()
-if len(bad_routes) > 0:
-    st.warning(f"⚠️ Some routes in dataset are not in 'X to Y' format: {bad_routes[:5]} ...")
 
 # ===============================
 # User Inputs
@@ -60,25 +96,24 @@ preferences = st.text_area(
 
 # --- Departure & Destination ---
 departure_country = st.selectbox(
-    "Select Departure Country:",
+    "Select Departure:",
     sorted(df["Departure"].dropna().unique())
 )
 
-# Dynamic destinations based on departure
 available_destinations = (
     df[df["Departure"] == departure_country]["Destination"]
     .dropna()
     .unique()
 )
 destination_country = st.selectbox(
-    "Select Destination Country:",
+    "Select Destination:",
     sorted(available_destinations)
 )
 
 # --- Other Filters ---
-travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
+travel_class = st.selectbox("Select Class:", sorted(df["Class"].dropna().unique()))
 
-traveller_type = st.selectbox("Select Traveller Type:", df["Type of Traveller"].dropna().unique())
+traveller_type = st.selectbox("Select Traveller Type:", sorted(df["Type of Traveller"].dropna().unique()))
 
 budget = st.selectbox("Select Budget Range:", ["Any", "Cheap", "Mid", "Luxury"])
 
@@ -95,7 +130,6 @@ top_n = st.number_input("Number of Recommendations:", min_value=1, max_value=10,
 # ===============================
 filtered_df = df.copy()
 
-# Apply filters
 if budget != "Any":
     filtered_df = filtered_df[filtered_df["Budget"] == budget]
 
