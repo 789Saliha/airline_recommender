@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import re
 
 st.title("✈️ Advanced Airline Recommendation System")
 
@@ -38,16 +39,34 @@ df["Amenities"] = df["Reviews"].apply(
 )
 
 # ===============================
-# Extract Departure & Destination (Safe Split)
+# Clean & Normalize Routes
 # ===============================
-split_routes = df["Route"].str.split(" to ", n=1, expand=True)
+def clean_route(route):
+    if pd.isna(route):
+        return "Unknown to Unknown"
+
+    r = route.strip().lower()
+
+    # Replace different variations of 'to'
+    r = re.sub(r"\b(to|tyo|nto)\b", " to ", r)
+
+    # Remove 'via ...'
+    r = re.sub(r" via .*", "", r)
+
+    if " to " not in r:
+        return "Unknown to Unknown"
+
+    return r.title()
+
+df["Cleaned_Route"] = df["Route"].apply(clean_route)
+
+split_routes = df["Cleaned_Route"].str.split(" to ", n=1, expand=True)
 df["Departure"] = split_routes[0].fillna("Unknown").str.strip()
 df["Destination"] = split_routes[1].fillna("Unknown").str.strip()
 
-# Warn if some routes are malformed
 bad_routes = df[df["Destination"] == "Unknown"]["Route"].unique()
 if len(bad_routes) > 0:
-    st.warning(f"⚠️ Some routes in dataset are not in 'X to Y' format: {bad_routes[:5]} ...")
+    st.warning(f"⚠️ Some routes are still malformed: {bad_routes[:5]} ...")
 
 # ===============================
 # User Inputs
@@ -58,13 +77,11 @@ preferences = st.text_area(
     "Describe your preferences (e.g., 'comfortable airline with good food and entertainment')"
 )
 
-# --- Departure & Destination ---
 departure_country = st.selectbox(
     "Select Departure:",
     sorted(df["Departure"].dropna().unique())
 )
 
-# Dynamic destinations based on departure
 available_destinations = (
     df[df["Departure"] == departure_country]["Destination"]
     .dropna()
@@ -75,19 +92,12 @@ destination_country = st.selectbox(
     sorted(available_destinations)
 )
 
-# --- Other Filters ---
 travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
-
 traveller_type = st.selectbox("Select Traveller Type:", df["Type of Traveller"].dropna().unique())
-
 budget = st.selectbox("Select Budget Range:", ["Any", "Cheap", "Mid", "Luxury"])
-
 alliance = st.selectbox("Select Airline Alliance:", ["Any", "Star Alliance", "Oneworld", "SkyTeam", "None"])
-
 duration = st.selectbox("Select Flight Duration:", ["Any", "Short-haul", "Medium-haul", "Long-haul"])
-
 amenities = st.multiselect("Select Preferred Amenities:", ["WiFi", "Extra Legroom", "Lounge Access", "Entertainment"])
-
 top_n = st.number_input("Number of Recommendations:", min_value=1, max_value=10, value=5)
 
 # ===============================
@@ -95,43 +105,30 @@ top_n = st.number_input("Number of Recommendations:", min_value=1, max_value=10,
 # ===============================
 filtered_df = df.copy()
 
-# Apply filters
 if budget != "Any":
     filtered_df = filtered_df[filtered_df["Budget"] == budget]
-
 if alliance != "Any":
     filtered_df = filtered_df[filtered_df["Alliance"] == alliance]
-
 if duration != "Any":
     filtered_df = filtered_df[filtered_df["Flight Duration"] == duration]
-
 if amenities:
     filtered_df = filtered_df[filtered_df["Amenities"].apply(lambda x: all(a in x for a in amenities))]
-
 if travel_class:
     filtered_df = filtered_df[filtered_df["Class"] == travel_class]
-
 if traveller_type:
     filtered_df = filtered_df[filtered_df["Type of Traveller"] == traveller_type]
-
 if departure_country:
     filtered_df = filtered_df[filtered_df["Departure"] == departure_country]
-
 if destination_country:
     filtered_df = filtered_df[filtered_df["Destination"] == destination_country]
 
-# ===============================
-# Handle Empty DataFrame or Missing Columns
-# ===============================
-if filtered_df.empty or "Airline" not in filtered_df.columns or "Overall Rating" not in filtered_df.columns:
-    recommendations = pd.Series(dtype=float)  # empty series
-else:
-    recommendations = (
-        filtered_df.groupby("Airline")["Overall Rating"]
-        .mean()
-        .sort_values(ascending=False)
-        .head(top_n)
-    )
+# Aggregate airline ratings
+recommendations = (
+    filtered_df.groupby("Airline")["Overall Rating"]
+    .mean()
+    .sort_values(ascending=False)
+    .head(top_n)
+)
 
 # ===============================
 # Display Results
