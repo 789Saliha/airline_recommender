@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
 
 st.title("✈️ Advanced Airline Recommendation System")
 
@@ -30,8 +29,8 @@ alliance_map = {
 df["Alliance"] = df["Airline"].map(alliance_map).fillna("None")
 
 df["Flight Duration"] = np.where(
-    df["Route"].str.contains("London|Paris|Rome", na=False, case=False), "Short-haul",
-    np.where(df["Route"].str.contains("New York|Dubai", na=False, case=False), "Long-haul", "Medium-haul")
+    df["Route"].str.contains("London|Paris|Rome", na=False), "Short-haul",
+    np.where(df["Route"].str.contains("New York|Dubai", na=False), "Long-haul", "Medium-haul")
 )
 
 df["Amenities"] = df["Reviews"].apply(
@@ -39,29 +38,16 @@ df["Amenities"] = df["Reviews"].apply(
 )
 
 # ===============================
-# Clean and Extract Departure & Destination
+# Extract Departure & Destination (Safe Split)
 # ===============================
-def clean_route(route):
-    if pd.isna(route):
-        return "Unknown to Unknown"
-    route = str(route).lower()
-    route = re.sub(r"\s*via.*", "", route)  # remove "via ..."
-    route = re.sub(r"[-–]", " to ", route)  # replace - with 'to'
-    route = re.sub(r"into|nto", " to ", route)  # fix 'Parisnto Kiev'
-    route = re.sub(r"\s*tyo\s*", " to ", route)  # fix 'Washington tyo Tehran'
-    route = re.sub(r"\s+", " ", route).strip()  # normalize spaces
-    if " to " not in route:
-        return route + " to Unknown"
-    return route
+split_routes = df["Route"].str.split(" to ", n=1, expand=True)
+df["Departure"] = split_routes[0].fillna("Unknown").str.strip()
+df["Destination"] = split_routes[1].fillna("Unknown").str.strip()
 
-df["Cleaned Route"] = df["Route"].apply(clean_route)
-
-split_routes = df["Cleaned Route"].str.split(" to ", n=1, expand=True)
-if split_routes.shape[1] == 1:  # if no destination part
-    split_routes[1] = "Unknown"
-
-df["Departure"] = split_routes[0].str.title().fillna("Unknown").str.strip()
-df["Destination"] = split_routes[1].str.title().fillna("Unknown").str.strip()
+# Warn if some routes are malformed
+bad_routes = df[df["Destination"] == "Unknown"]["Route"].unique()
+if len(bad_routes) > 0:
+    st.warning(f"⚠️ Some routes in dataset are not in 'X to Y' format: {bad_routes[:5]} ...")
 
 # ===============================
 # User Inputs
@@ -78,23 +64,31 @@ departure_country = st.selectbox(
     sorted(df["Departure"].dropna().unique())
 )
 
+# Dynamic destinations based on departure
 available_destinations = (
     df[df["Departure"] == departure_country]["Destination"]
     .dropna()
     .unique()
 )
+
 destination_country = st.selectbox(
     "Select Destination Country:",
-    sorted(available_destinations)
+    ["Any"] + sorted(available_destinations.tolist())
 )
 
 # --- Other Filters ---
 travel_class = st.selectbox("Select Class:", df["Class"].dropna().unique())
+
 traveller_type = st.selectbox("Select Traveller Type:", df["Type of Traveller"].dropna().unique())
+
 budget = st.selectbox("Select Budget Range:", ["Any", "Cheap", "Mid", "Luxury"])
+
 alliance = st.selectbox("Select Airline Alliance:", ["Any", "Star Alliance", "Oneworld", "SkyTeam", "None"])
+
 duration = st.selectbox("Select Flight Duration:", ["Any", "Short-haul", "Medium-haul", "Long-haul"])
+
 amenities = st.multiselect("Select Preferred Amenities:", ["WiFi", "Extra Legroom", "Lounge Access", "Entertainment"])
+
 top_n = st.number_input("Number of Recommendations:", min_value=1, max_value=10, value=5)
 
 # ===============================
@@ -102,6 +96,7 @@ top_n = st.number_input("Number of Recommendations:", min_value=1, max_value=10,
 # ===============================
 filtered_df = df.copy()
 
+# Apply filters
 if budget != "Any":
     filtered_df = filtered_df[filtered_df["Budget"] == budget]
 
@@ -123,7 +118,7 @@ if traveller_type:
 if departure_country:
     filtered_df = filtered_df[filtered_df["Departure"] == departure_country]
 
-if destination_country:
+if destination_country and destination_country != "Any":
     filtered_df = filtered_df[filtered_df["Destination"] == destination_country]
 
 # Aggregate airline ratings
